@@ -1,0 +1,205 @@
+const CATEGORIES=[['SINH HOẠT','Life','🔹'],['VIỆC CÔNG TY','Company','🟢'],['XÂY DỰNG ĐẾ CHẾ','Empire','🟡']];
+const KEY='focus-flow-2-cache'; let state={tasks:[],date:localDate(new Date()),view:'today',pending:[]};
+const $=s=>document.querySelector(s); const esc=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+function localDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)} function mins(x){const s=String(x||'30m').toLowerCase();const h=s.match(/([\d.]+)\s*h/),m=s.match(/([\d.]+)\s*m/);return h?Math.round(+h[1]*60):m?Math.round(+m[1]):(+s||30)}
+function save(){localStorage.setItem(KEY,JSON.stringify(state.tasks))} function toast(t){const n=document.createElement('div');n.className='toast';n.textContent=t;document.body.append(n);setTimeout(()=>n.remove(),2200)}
+function queue(type,task){state.pending.push({type,id:task.id,task}); save(); sync()} function newTask(category,title,duration,note=''){const t={id:'local-'+crypto.randomUUID(),date:state.date,category,title:title||'Untitled task',duration:duration||'30m',completed:false,note,actualMinutes:0,pomodoros:0};state.tasks.unshift(t);queue('upsert',t);render()}
+async function sync(){if(!state.pending.length||typeof google==='undefined'||!google.script)return;const changes=state.pending.splice(0); status('SYNCING');google.script.run.withSuccessHandler(r=>{state.tasks=r.tasks||state.tasks;save();status('SYNCED');render()}).withFailureHandler(()=>{state.pending.unshift(...changes);status('OFFLINE')}).sync({changes})}
+function status(x){$('.status').innerHTML='<i class="dot"></i>'+x}
+function render(){const app=$('#app');const visible=state.tasks.filter(t=>t.date===state.date);app.innerHTML=`<div class="shell"><header class="top"><div class="brand"><div class="logo">✦</div><div><h1>Focus Flow</h1><p>Daily operational radar</p></div></div><div class="status"><i class="dot"></i>LOCAL</div></header><div class="toolbar"><div class="tabs"><button class="${state.view==='today'?'active':''}" data-view="today">Today</button><button class="${state.view==='insights'?'active':''}" data-view="insights">Insights</button></div><div class="date"><button id="prev">‹</button><strong>${state.date}</strong><button id="next">›</button></div></div><div class="quick"><input id="title" class="input" placeholder="Add a task and press Enter…"><select id="category" class="select">${CATEGORIES.map(c=>`<option value="${c[0]}">${c[1]}</option>`).join('')}</select><input id="duration" class="input" value="30m"><button id="add">Add task</button></div><main class="${state.view==='insights'?'hidden':''}"><div class="board">${CATEGORIES.map(c=>column(c,visible.filter(t=>t.category===c[0]))).join('')}</div></main><main class="${state.view==='today'?'hidden':''}">${insights()}</main></div>`;bind();}
+function column(c,list){const done=list.filter(t=>t.completed).length,p=list.length?Math.round(done/list.length*100):0;return `<section class="column"><div class="column-head"><div class="column-title">${c[2]} ${c[1]}</div><span class="badge">${done}/${list.length}</span></div><div class="progress"><i style="width:${p}%"></i></div>${list.length?list.map(task).join(''):'<div class="empty">No tasks for this day</div>'}<button class="add" data-cat="${c[0]}">＋ Add objective</button></section>`}
+function task(t){return `<article class="task"><button class="check ${t.completed?'done':''}" data-toggle="${t.id}"></button><div><h3 class="${t.completed?'done':''}">${esc(t.title)}</h3><div class="meta"><span>◷ ${esc(t.duration)}</span>${t.pomodoros?`<span>🍅 ${t.pomodoros}</span>`:''}</div>${t.note?`<div class="meta">${esc(t.note)}</div>`:''}</div><div class="actions"><button class="icon" data-edit="${t.id}">✎</button><button class="icon" data-delete="${t.id}">×</button></div></article>`}
+function insights(){const ts=state.tasks.filter(t=>t.date===state.date),done=ts.filter(t=>t.completed).length,total=ts.reduce((a,t)=>a+mins(t.duration),0),pom=ts.reduce((a,t)=>a+(t.pomodoros||0),0);return `<div class="insights"><div class="metric"><span>Completion</span><strong>${ts.length?Math.round(done/ts.length*100):0}%</strong></div><div class="metric"><span>Planned time</span><strong>${Math.round(total/60*10)/10}h</strong></div><div class="metric"><span>Closed loops</span><strong>${done}</strong></div><div class="metric"><span>Pomodoros</span><strong>${pom}</strong></div></div>`}
+function bind(){$('#prev').onclick=()=>{const d=new Date(state.date);d.setDate(d.getDate()-1);state.date=localDate(d);render()};$('#next').onclick=()=>{const d=new Date(state.date);d.setDate(d.getDate()+1);state.date=localDate(d);render()};document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});$('#add').onclick=()=>{newTask($('#category').value,$('#title').value,$('#duration').value);};$('#title').onkeydown=e=>{if(e.key==='Enter')$('#add').click()};document.querySelectorAll('.add').forEach(b=>b.onclick=()=>newTask(b.dataset.cat,'Untitled task','30m'));document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.toggle);t.completed=!t.completed;queue('upsert',t);render()});document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.delete);state.tasks=state.tasks.filter(x=>x.id!==t.id);queue('delete',t);render()});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.edit),v=prompt('Task title',t.title);if(v!==null){t.title=v.trim()||t.title;queue('upsert',t);render()}})}
+function boot(){try{state.tasks=JSON.parse(localStorage.getItem(KEY)||'[]')}catch{};render();if(typeof google!=='undefined'&&google.script){status('SYNCING');google.script.run.withSuccessHandler(r=>{state.tasks=r.tasks||[];save();status('SYNCED');render()}).withFailureHandler(()=>status('OFFLINE')).bootstrap()}else status('LOCAL DEMO')}
+document.addEventListener('DOMContentLoaded',boot);
+
+// Pomodoro layer: live focus timer and actual time tracking.
+state.active = null;
+function focusSeconds(t) {
+  return Math.max(0, Math.round((t.actualMinutes || 0) * 60) +
+    (state.active && state.active.id === t.id ? Math.floor((Date.now() - state.active.startedAt) / 1000) : 0));
+}
+function focusClock(seconds) {
+  return String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+}
+function stopFocus(t, complete) {
+  if (!state.active || state.active.id !== t.id) return;
+  t.actualMinutes = Math.max(t.actualMinutes || 0, Math.round(focusSeconds(t) / 60));
+  if (complete) { t.completed = true; t.pomodoros = (t.pomodoros || 0) + 1; }
+  state.active = null; queue('upsert', t); toast(complete ? 'Pomodoro saved to task' : 'Focus paused'); render();
+}
+function task(t) {
+  const running = state.active && state.active.id === t.id;
+  const actual = t.actualMinutes ? '<span>⏱ ' + t.actualMinutes + 'm actual</span>' : ''; const pomos = t.pomodoros ? '<span>🍅 ' + t.pomodoros + '</span>' : ''; const note = t.note ? '<div class="meta">' + esc(t.note) + '</div>' : ''; return '<article class="task"><button class="check ' + (t.completed ? 'done' : '') + '" data-toggle="' + t.id + '"></button><div><h3 class="' + (t.completed ? 'done' : '') + '">' + esc(t.title) + '</h3><div class="meta"><span>◷ ' + esc(t.duration) + '</span><span class="live-time">' + focusClock(Math.max(0, mins(t.duration) * 60 - focusSeconds(t))) + '</span>' + actual + pomos + '</div>' + note + '</div><div class="actions"><button class="icon" data-play="' + t.id + '" title="' + (running ? 'Pause focus' : 'Start focus') + '">' + (running ? '⏸' : '▶') + '</button><button class="icon" data-edit="' + t.id + '">✎</button><button class="icon" data-delete="' + t.id + '">×</button></div></article>';
+}
+function enhancePomodoro() {
+  document.querySelectorAll('[data-play]').forEach(button => {
+    button.onclick = () => {
+      const t = state.tasks.find(item => item.id === button.dataset.play); if (!t) return;
+      if (state.active && state.active.id === t.id) stopFocus(t, false);
+      else { if (state.active) { const old = state.tasks.find(item => item.id === state.active.id); if (old) stopFocus(old, false); } state.active = { id: t.id, startedAt: Date.now() }; toast('Focus started — stay with this task'); render(); }
+    };
+  });
+  document.querySelectorAll('[data-toggle]').forEach(button => button.addEventListener('click', () => {
+    const t = state.tasks.find(item => item.id === button.dataset.toggle);
+    if (t && state.active && state.active.id === t.id) stopFocus(t, true);
+  }));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const originalRender = render; render = function() { originalRender(); enhancePomodoro(); };
+  enhancePomodoro(); setInterval(() => { if (state.active) render(); }, 1000);
+});
+
+// Full Pomodoro experience: focus, short break, long break, skip and pause.
+state.pomodoro = null;
+function pomoLabel() {
+  if (!state.pomodoro) return '';
+  return state.pomodoro.phase === 'focus' ? 'FOCUS' : state.pomodoro.phase === 'short' ? 'SHORT BREAK' : 'LONG BREAK';
+}
+function pomoTotal() {
+  return state.pomodoro.phase === 'focus' ? mins(state.tasks.find(x => x.id === state.pomodoro.taskId).duration) * 60 : state.pomodoro.phase === 'short' ? 5 * 60 : 15 * 60;
+}
+function pomoElapsed() {
+  return state.pomodoro && state.pomodoro.running ? Math.floor((Date.now() - state.pomodoro.startedAt) / 1000) + state.pomodoro.pausedSeconds : (state.pomodoro ? state.pomodoro.pausedSeconds : 0);
+}
+function pomoClock(seconds) { return String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0'); }
+function pomodoroModal() {
+  if (!state.pomodoro) return;
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId); if (!t) return;
+  let modal = document.querySelector('.pomodoro-backdrop');
+  if (!modal) { modal = document.createElement('div'); modal.className = 'pomodoro-backdrop'; document.body.appendChild(modal); }
+  const total = pomoTotal(), elapsed = Math.min(total, pomoElapsed()), remaining = Math.max(0, total - elapsed), isBreak = state.pomodoro.phase !== 'focus';
+  modal.innerHTML = '<div class="pomodoro-card"><button class="pomodoro-close" data-pomo-close>×</button><div class="pomodoro-kicker">Focus Flow · Pomodoro</div><h2 class="pomodoro-title">' + esc(t.title) + '</h2><div class="pomodoro-phase ' + (isBreak ? 'break' : '') + '">' + pomoLabel() + '</div><div class="pomodoro-clock">' + pomoClock(remaining) + '</div><div class="pomodoro-sub">' + (state.pomodoro.running ? (isBreak ? 'Recover your attention.' : 'One focused block. No context switching.') : 'Paused — choose when to continue.') + '</div><div class="pomodoro-actions"><button class="pomodoro-primary" data-pomo-toggle>' + (state.pomodoro.running ? 'Pause' : 'Resume') + '</button><button class="pomodoro-soft" data-pomo-skip>Skip</button>' + (isBreak ? '<button class="pomodoro-soft" data-pomo-focus>Start next focus</button>' : '') + '<button class="pomodoro-danger" data-pomo-end>End session</button></div><div class="pomodoro-progress"><i style="width:' + Math.round(elapsed / total * 100) + '%"></i></div><div class="pomodoro-stats"><span>Actual <strong>' + (t.actualMinutes || 0) + 'm</strong></span><span>Pomodoros <strong>' + (t.pomodoros || 0) + '</strong></span></div></div>';
+  modal.querySelector('[data-pomo-close]').onclick = () => { state.pomodoro.running = false; state.pomodoro.pausedSeconds = pomoElapsed(); modal.remove(); };
+  modal.querySelector('[data-pomo-toggle]').onclick = () => { if (state.pomodoro.running) { state.pomodoro.pausedSeconds = pomoElapsed(); state.pomodoro.running = false; } else { state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; } pomodoroModal(); };
+  modal.querySelector('[data-pomo-skip]').onclick = () => advancePomodoro(true);
+  const focusButton = modal.querySelector('[data-pomo-focus]'); if (focusButton) focusButton.onclick = () => startPomodoroPhase('focus');
+  modal.querySelector('[data-pomo-end]').onclick = () => endPomodoro(true);
+}
+function startPomodoroPhase(phase) {
+  if (!state.pomodoro) return;
+  state.pomodoro.phase = phase; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
+}
+function completeFocusBlock(t) {
+  t.actualMinutes = (t.actualMinutes || 0) + mins(t.duration);
+  t.pomodoros = (t.pomodoros || 0) + 1; queue('upsert', t);
+}
+function advancePomodoro(skipped) {
+  if (!state.pomodoro) return;
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId), phase = state.pomodoro.phase;
+  if (phase === 'focus') {
+    if (!skipped) completeFocusBlock(t);
+    state.pomodoro.phase = (t.pomodoros % 4 === 0) ? 'long' : 'short';
+    state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true;
+  } else { startPomodoroPhase('focus'); return; }
+  pomodoroModal();
+}
+function endPomodoro(markDone) {
+  if (!state.pomodoro) return;
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+  if (markDone) { t.completed = true; queue('upsert', t); }
+  state.pomodoro = null; state.active = null; const modal = document.querySelector('.pomodoro-backdrop'); if (modal) modal.remove(); render();
+}
+function openPomodoro(t) {
+  if (!state.pomodoro || state.pomodoro.taskId !== t.id) state.pomodoro = { taskId: t.id, phase: 'focus', startedAt: Date.now(), pausedSeconds: 0, running: true };
+  pomodoroModal();
+}
+function enhancePomodoro() {
+  document.querySelectorAll('[data-play]').forEach(button => {
+    button.onclick = () => { const t = state.tasks.find(item => item.id === button.dataset.play); if (t) openPomodoro(t); };
+  });
+  document.querySelectorAll('[data-toggle]').forEach(button => button.addEventListener('click', () => {
+    const t = state.tasks.find(item => item.id === button.dataset.toggle);
+    if (t && state.pomodoro && state.pomodoro.taskId === t.id) endPomodoro(true);
+  }));
+}
+setInterval(() => { if (state.pomodoro && state.pomodoro.running) { if (pomoElapsed() >= pomoTotal()) advancePomodoro(false); else pomodoroModal(); } }, 1000);
+
+function insights() {
+  const ts = state.tasks.filter(t => t.date === state.date);
+  const planned = ts.reduce((sum, t) => sum + mins(t.duration), 0);
+  const actual = ts.reduce((sum, t) => sum + (t.actualMinutes || 0), 0);
+  const done = ts.filter(t => t.completed).length;
+  const over = ts.filter(t => (t.actualMinutes || 0) > mins(t.duration));
+  const variance = actual - planned;
+  const completion = ts.length ? Math.round(done / ts.length * 100) : 0;
+  const overRate = ts.length ? Math.round(over.length / ts.length * 100) : 0;
+  const rows = ts.slice().sort((a, b) => ((b.actualMinutes || 0) - mins(b.duration)) - ((a.actualMinutes || 0) - mins(a.duration))).map(t => {
+    const p = mins(t.duration), delta = (t.actualMinutes || 0) - p;
+    return '<div class="insight-row"><div><strong>' + esc(t.title) + '</strong><span>' + esc(t.category) + '</span></div><span class="planned-cell">' + p + 'm planned</span><span class="' + (delta > 0 ? 'over-cell' : 'under-cell') + '">' + (delta > 0 ? '+' : '') + delta + 'm</span><span>' + (t.completed ? 'Done' : 'Open') + '</span></div>';
+  }).join('');
+  return '<section class="dashboard"><div class="dashboard-head"><div><div class="eyebrow">DAILY OPERATIONS</div><h2>Execution Insights</h2><p>Where your estimates diverge from reality.</p></div><div class="dashboard-date">' + state.date + '</div></div><div class="insight-metrics"><div class="metric"><span>Planned</span><strong>' + Math.round(planned / 60 * 10) / 10 + 'h</strong><small>estimated workload</small></div><div class="metric"><span>Actual</span><strong>' + Math.round(actual / 60 * 10) / 10 + 'h</strong><small>recorded focus time</small></div><div class="metric ' + (variance > 0 ? 'metric-warn' : '') + '"><span>Variance</span><strong>' + (variance > 0 ? '+' : '') + Math.round(variance / 60 * 10) / 10 + 'h</strong><small>actual minus planned</small></div><div class="metric ' + (overRate > 0 ? 'metric-warn' : '') + '"><span>Overrun rate</span><strong>' + overRate + '%</strong><small>' + over.length + ' task(s) over estimate</small></div></div><div class="insight-panels"><div class="insight-panel"><div class="panel-title">Task variance <span>' + ts.length + ' tasks</span></div><div class="insight-table-head"><span>Task</span><span>Plan</span><span>Delta</span><span>Status</span></div>' + (rows || '<div class="empty">No data for this day</div>') + '</div><div class="insight-panel analyst"><div class="panel-title">Analyst readout</div><div class="score-ring">' + completion + '%</div><h3>' + (variance > 0 ? 'Estimates are running hot.' : 'Estimates are under control.') + '</h3><p>' + (ts.length ? 'You closed ' + done + '/' + ts.length + ' tasks. ' + (over.length ? over.length + ' task(s) consumed more time than planned.' : 'No task has exceeded its estimate yet.') : 'Complete a task to generate an operational readout.') + '</p></div></div></section>';
+}
+setInterval(() => {
+  const quick = document.querySelector('.quick');
+  if (quick) quick.classList.toggle('hidden', state.view === 'insights');
+}, 300);
+
+// Tracking semantics: actual time is exact focused time, while Pomodoro count
+// is derived from actualMinutes / the task's planned block length.
+function overallActualMinutes() {
+  return state.tasks.filter(x => x.date === state.date).reduce((sum, x) => sum + (x.actualMinutes || 0), 0) +
+    (state.pomodoro && state.pomodoro.phase === 'focus' ? Math.round(pomoElapsed() / 60) : 0);
+}
+function commitPomoWork(t, seconds) {
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (!minutes) return;
+  t.actualMinutes = (t.actualMinutes || 0) + minutes;
+  t.pomodoros = Math.floor(t.actualMinutes / Math.max(1, mins(t.duration)));
+  queue('upsert', t);
+}
+function pomoLabel() {
+  if (!state.pomodoro) return '';
+  return state.pomodoro.phase === 'focus' ? 'FOCUS' : state.pomodoro.phase === 'short' ? 'SHORT BREAK · 5 MIN' : state.pomodoro.phase === 'global' ? 'OVERALL BREAK · 15 MIN' : 'BREAK';
+}
+function pomoTotal() {
+  if (state.pomodoro.phase === 'global') return 15 * 60;
+  if (state.pomodoro.phase === 'focus') {
+    const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+    return Math.max(1, mins(t.duration)) * 60;
+  }
+  return 5 * 60;
+}
+function advancePomodoro(skipped) {
+  if (!state.pomodoro) return;
+  if (state.pomodoro.phase === 'global' || state.pomodoro.phase === 'short') { startPomodoroPhase('focus'); return; }
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+  commitPomoWork(t, pomoElapsed());
+  state.pomodoro.phase = 'short'; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
+}
+function endPomodoro(markDone) {
+  if (!state.pomodoro) return;
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+  if (state.pomodoro.phase === 'focus') commitPomoWork(t, pomoElapsed());
+  if (markDone) { t.completed = true; queue('upsert', t); }
+  state.pomodoro = null; state.active = null; const modal = document.querySelector('.pomodoro-backdrop'); if (modal) modal.remove(); render();
+}
+function startOverallBreak() {
+  if (!state.pomodoro) return;
+  state.pomodoro.phase = 'global'; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
+  const title = document.querySelector('.pomodoro-title'); if (title) title.textContent = 'Overall tracking break';
+}
+function enhancePomodoro() {
+  document.querySelectorAll('[data-play]').forEach(button => {
+    button.onclick = () => { const t = state.tasks.find(item => item.id === button.dataset.play); if (t) openPomodoro(t); };
+  });
+  document.querySelectorAll('[data-toggle]').forEach(button => button.addEventListener('click', () => {
+    const t = state.tasks.find(item => item.id === button.dataset.toggle);
+    if (t && state.pomodoro && state.pomodoro.taskId === t.id) endPomodoro(true);
+  }));
+  const modal = document.querySelector('.pomodoro-backdrop');
+  if (modal && overallActualMinutes() >= 90 && !modal.querySelector('[data-global-break]') && state.pomodoro.phase === 'focus') {
+    const actions = modal.querySelector('.pomodoro-actions');
+    if (actions) {
+      const button = document.createElement('button'); button.className = 'pomodoro-soft'; button.dataset.globalBreak = '1'; button.textContent = 'Take 15m overall break'; button.onclick = startOverallBreak; actions.appendChild(button);
+    }
+  }
+}
+
+
+
+
+
+
+

@@ -1,0 +1,79 @@
+/** Focus Flow 2 — Google Sheets adapter.
+ *  Deploy as a web app. The UI calls bootstrap() once and sync() in batches.
+ */
+const CONFIG = {
+  taskSheet: 'Tasks',
+  headers: ['id', 'date', 'category', 'title', 'duration', 'completed', 'createdAt', 'updatedAt', 'note', 'actualMinutes', 'pomodoros', 'lastPomodoroAt']
+};
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('Focus Flow 2')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function bootstrap() {
+  const sheet = ensureTaskSheet_();
+  const rows = sheet.getDataRange().getValues();
+  return { tasks: rows.slice(1).filter(row => row[0]).map(rowToTask_), serverTime: new Date().toISOString() };
+}
+
+function sync(payload) {
+  const changes = payload && Array.isArray(payload.changes) ? payload.changes : [];
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = ensureTaskSheet_();
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    const byId = new Map();
+    values.slice(1).forEach((row, index) => { if (row[0]) byId.set(String(row[0]), index + 2); });
+    const now = new Date().toISOString();
+
+    changes.forEach(change => {
+      const id = String(change.id || Utilities.getUuid());
+      const rowIndex = byId.get(id);
+      if (change.type === 'delete') {
+        if (rowIndex) sheet.getRange(rowIndex, 1, 1, CONFIG.headers.length).clearContent();
+        return;
+      }
+      const current = rowIndex ? rowToTask_(sheet.getRange(rowIndex, 1, 1, CONFIG.headers.length).getValues()[0]) : {};
+      const task = Object.assign({}, current, change.task || {}, {
+        id,
+        date: normalizeDate_(change.task && change.task.date || current.date) || today_(),
+        createdAt: current.createdAt || now,
+        updatedAt: now
+      });
+      const row = taskToRow_(task);
+      if (rowIndex) sheet.getRange(rowIndex, 1, 1, CONFIG.headers.length).setValues([row]);
+      else sheet.appendRow(row);
+    });
+    return bootstrap();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ensureTaskSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.taskSheet);
+  if (!sheet) sheet = ss.insertSheet(CONFIG.taskSheet);
+  const width = Math.max(sheet.getLastColumn(), CONFIG.headers.length);
+  const existing = sheet.getRange(1, 1, 1, width).getValues()[0];
+  CONFIG.headers.forEach((header, index) => { if (existing[index] !== header) sheet.getRange(1, index + 1).setValue(header); });
+  sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, CONFIG.headers.length).setFontWeight('bold').setBackground('#18233a').setFontColor('#ffffff');
+  return sheet;
+}
+
+function rowToTask_(row) {
+  return { id: String(row[0] || ''), date: normalizeDate_(row[1]), category: String(row[2] || 'SINH HOẠT'), title: String(row[3] || ''), duration: String(row[4] || '30m'), completed: row[5] === true || String(row[5]).toLowerCase() === 'true', createdAt: String(row[6] || ''), updatedAt: String(row[7] || ''), note: String(row[8] || ''), actualMinutes: Number(row[9] || 0), pomodoros: Number(row[10] || 0), lastPomodoroAt: String(row[11] || '') };
+}
+
+function taskToRow_(task) {
+  return [String(task.id || ''), normalizeDate_(task.date), String(task.category || 'SINH HOẠT'), String(task.title || 'Untitled task'), String(task.duration || '30m'), task.completed === true, String(task.createdAt || ''), String(task.updatedAt || ''), String(task.note || ''), Number(task.actualMinutes || 0), Number(task.pomodoros || 0), String(task.lastPomodoroAt || '')];
+}
+
+function normalizeDate_(value) { return value instanceof Date ? Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(value || '').slice(0, 10); }
+function today_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }

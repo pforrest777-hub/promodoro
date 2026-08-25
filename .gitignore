@@ -1,0 +1,6 @@
+node_modules/
+.env
+.env.local
+*.pem
+*service-account*.json
+flash-spot-478110-u3-3ce821207c33.json

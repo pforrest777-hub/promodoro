@@ -1,0 +1,8 @@
+{
+  "name": "focus-flow-standalone",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
