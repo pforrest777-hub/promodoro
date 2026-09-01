@@ -48,6 +48,16 @@ POST /api/sheets
 
 ## Cấu hình Vercel
 
+### Khuyến nghị: Apps Script proxy
+
+Để không phải lưu Google service-account private key trong Vercel, có thể dùng Apps Script làm adapter tới Sheet. Deploy thư mục `apps-script/` thành Web App, chạy dưới tài khoản của chủ Sheet và đặt quyền truy cập phù hợp. Sau đó thêm biến:
+
+```text
+APPS_SCRIPT_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+```
+
+Khi có `APPS_SCRIPT_URL`, API Vercel sẽ chuyển tiếp bootstrap/sync sang Apps Script và không dùng Google credential trực tiếp.
+
 Trong đúng project Vercel của repo `promodoro`, thêm các Environment Variables cho Production, Preview và Development:
 
 ```text

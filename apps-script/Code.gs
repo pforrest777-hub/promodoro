@@ -6,11 +6,23 @@ const CONFIG = {
   headers: ['id', 'date', 'category', 'title', 'duration', 'completed', 'createdAt', 'updatedAt', 'note', 'actualMinutes', 'pomodoros', 'lastPomodoroAt']
 };
 
-function doGet() {
+function doGet(e) {
+  if (e && e.parameter && e.parameter.action === 'bootstrap') {
+    return jsonOutput_(bootstrap());
+  }
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('Focus Flow 2')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function doPost(e) {
+  const payload = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+  return jsonOutput_(sync(payload));
+}
+
+function jsonOutput_(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function bootstrap() {

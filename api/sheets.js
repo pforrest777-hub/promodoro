@@ -3,6 +3,22 @@ const { google } = require('googleapis');
 const HEADERS = ['id','date','category','title','duration','completed','createdAt','updatedAt','note','actualMinutes','pomodoros','lastPomodoroAt'];
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
+async function appsScriptProxy(req, res) {
+  const base = String(process.env.APPS_SCRIPT_URL || '').trim();
+  if (!base) return false;
+  const url = new URL(base);
+  if (req.method === 'GET') url.searchParams.set('action', 'bootstrap');
+  const response = await fetch(url, {
+    method: req.method,
+    headers: req.method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+    body: req.method === 'POST' ? JSON.stringify(typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {})) : undefined
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error('Apps Script proxy ' + response.status + ': ' + text.slice(0, 300));
+  res.status(response.status).setHeader('Content-Type', 'application/json').send(text);
+  return true;
+}
+
 function credentials() {
   const clientEmail = String(process.env.GOOGLE_CLIENT_EMAIL || '').trim();
   const privateKey = String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
@@ -117,6 +133,7 @@ async function sync(sheets, changes) {
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
+    if (await appsScriptProxy(req, res)) return;
     const sheets = await sheetsClient();
     if (req.method === 'GET') return res.status(200).json(await bootstrap(sheets));
     if (req.method === 'POST') {
