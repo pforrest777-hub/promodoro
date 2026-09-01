@@ -58,6 +58,8 @@ APPS_SCRIPT_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
 
 Khi có `APPS_SCRIPT_URL`, API Vercel sẽ chuyển tiếp bootstrap/sync sang Apps Script và không dùng Google credential trực tiếp.
 
+**Trạng thái tích hợp hiện tại:** phương án Apps Script proxy đã được chọn. Vercel dùng biến `APPS_SCRIPT_URL` ở môi trường `Production` và `Preview`; không cần đưa private key lên Git hoặc dùng credential Google trực tiếp trong Vercel. Sau khi cập nhật URL hoặc `Code.gs`, luôn tạo version mới và Redeploy.
+
 Trong đúng project Vercel của repo `promodoro`, thêm các Environment Variables cho Production, Preview và Development:
 
 ```text
