@@ -94,11 +94,14 @@ function pomodoroModal() {
   let modal = document.querySelector('.pomodoro-backdrop');
   if (!modal) { modal = document.createElement('div'); modal.className = 'pomodoro-backdrop'; document.body.appendChild(modal); }
   const total = pomoTotal(), elapsed = Math.min(total, pomoElapsed()), remaining = Math.max(0, total - elapsed), isBreak = state.pomodoro.phase !== 'focus';
-  modal.innerHTML = '<div class="pomodoro-card"><button class="pomodoro-close" data-pomo-close>×</button><div class="pomodoro-kicker">Focus Flow · Pomodoro</div><h2 class="pomodoro-title">' + esc(t.title) + '</h2><div class="pomodoro-phase ' + (isBreak ? 'break' : '') + '">' + pomoLabel() + '</div><div class="pomodoro-clock">' + pomoClock(remaining) + '</div><div class="pomodoro-sub">' + (state.pomodoro.running ? (isBreak ? 'Recover your attention.' : 'One focused block. No context switching.') : 'Paused — choose when to continue.') + '</div><div class="pomodoro-actions"><button class="pomodoro-primary" data-pomo-toggle>' + (state.pomodoro.running ? 'Pause' : 'Resume') + '</button><button class="pomodoro-soft" data-pomo-skip>Skip</button>' + (isBreak ? '<button class="pomodoro-soft" data-pomo-focus>Start next focus</button>' : '') + '<button class="pomodoro-danger" data-pomo-end>End session</button></div><div class="pomodoro-progress"><i style="width:' + Math.round(elapsed / total * 100) + '%"></i></div><div class="pomodoro-stats"><span>Actual <strong>' + (t.actualMinutes || 0) + 'm</strong></span><span>Pomodoros <strong>' + (t.pomodoros || 0) + '</strong></span></div></div>';
+  const nextFocusControl = state.pomodoro.phase === 'short' ? '<div class="next-focus-control"><label>Next focus</label><input data-next-focus type="number" min="1" max="180" value="' + (state.pomodoro.focusMinutes || 30) + '"><span>minutes</span></div>' : '';
+  modal.innerHTML = '<div class="pomodoro-card"><button class="pomodoro-close" data-pomo-close>×</button><div class="pomodoro-kicker">Focus Flow · Pomodoro</div><h2 class="pomodoro-title">' + esc(t.title) + '</h2><div class="pomodoro-phase ' + (isBreak ? 'break' : '') + '">' + pomoLabel() + '</div><div class="pomodoro-clock">' + pomoClock(remaining) + '</div><div class="pomodoro-sub">' + (state.pomodoro.running ? (isBreak ? 'Recover your attention.' : 'One focused block. No context switching.') : 'Paused — choose when to continue.') + '</div>' + nextFocusControl + '<div class="pomodoro-actions"><button class="pomodoro-primary" data-pomo-toggle>' + (state.pomodoro.running ? 'Pause' : 'Resume') + '</button><button class="pomodoro-soft" data-pomo-skip>Skip</button>' + (isBreak ? '<button class="pomodoro-soft" data-pomo-focus>Start next focus</button>' : '') + '<button class="pomodoro-danger" data-pomo-end>End session</button></div><div class="pomodoro-progress"><i style="width:' + Math.round(elapsed / total * 100) + '%"></i></div><div class="pomodoro-stats"><span>Actual <strong>' + (t.actualMinutes || 0) + 'm</strong></span><span>Pomodoros <strong>' + (t.pomodoros || 0) + '</strong></span></div></div>';
   modal.querySelector('[data-pomo-close]').onclick = () => { state.pomodoro.running = false; state.pomodoro.pausedSeconds = pomoElapsed(); modal.remove(); };
   modal.querySelector('[data-pomo-toggle]').onclick = () => { if (state.pomodoro.running) { state.pomodoro.pausedSeconds = pomoElapsed(); state.pomodoro.running = false; } else { state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; } pomodoroModal(); };
   modal.querySelector('[data-pomo-skip]').onclick = () => advancePomodoro(true);
-  const focusButton = modal.querySelector('[data-pomo-focus]'); if (focusButton) focusButton.onclick = () => startPomodoroPhase('focus');
+  const focusButton = modal.querySelector('[data-pomo-focus]'); const nextInput = modal.querySelector('[data-next-focus]');
+  if (nextInput) nextInput.oninput = () => { state.pomodoro.focusMinutes = Math.max(1, Math.min(180, Number(nextInput.value) || 1)); };
+  if (focusButton) focusButton.onclick = () => startPomodoroPhase('focus', nextInput ? Number(nextInput.value) : state.pomodoro.focusMinutes);
   modal.querySelector('[data-pomo-end]').onclick = () => endPomodoro(true);
 }
 function startPomodoroPhase(phase) {
@@ -292,7 +295,5 @@ function enhancePomodoro() {
   const input = modal && modal.querySelector('[data-next-focus]');
   if (nextButton && input) nextButton.onclick = () => startPomodoroPhase('focus', Number(input.value));
 }
-
-
 
 
