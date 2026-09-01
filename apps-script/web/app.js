@@ -136,6 +136,69 @@ setInterval(() => {
   if (quick) quick.classList.toggle('hidden', state.view === 'insights');
 }, 300);
 
+// Per-round focus duration: the next Pomodoro can be changed after every block.
+function openPomodoro(t) {
+  if (!state.pomodoro || state.pomodoro.taskId !== t.id) {
+    state.pomodoro = { taskId: t.id, phase: 'focus', focusMinutes: Math.max(1, mins(t.duration)), startedAt: Date.now(), pausedSeconds: 0, running: true };
+  }
+  pomodoroModal();
+}
+function startPomodoroPhase(phase, minutes) {
+  if (!state.pomodoro) return;
+  if (phase === 'focus' && minutes) state.pomodoro.focusMinutes = Math.max(1, Math.round(minutes));
+  state.pomodoro.phase = phase; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
+}
+function pomoTotal() {
+  if (state.pomodoro.phase === 'global') return 15 * 60;
+  if (state.pomodoro.phase === 'focus') return Math.max(1, state.pomodoro.focusMinutes || 30) * 60;
+  return 5 * 60;
+}
+function commitPomoWork(t, seconds, completedBlock) {
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (!minutes) return;
+  t.actualMinutes = (t.actualMinutes || 0) + minutes;
+  if (completedBlock) t.pomodoros = (t.pomodoros || 0) + 1;
+  queue('upsert', t);
+}
+function advancePomodoro(skipped) {
+  if (!state.pomodoro) return;
+  if (state.pomodoro.phase === 'global' || state.pomodoro.phase === 'short') { startPomodoroPhase('focus', state.pomodoro.focusMinutes); return; }
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+  commitPomoWork(t, pomoElapsed(), !skipped);
+  state.pomodoro.phase = 'short'; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
+}
+function endPomodoro(markDone) {
+  if (!state.pomodoro) return;
+  const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
+  if (state.pomodoro.phase === 'focus') commitPomoWork(t, pomoElapsed(), false);
+  if (markDone) { t.completed = true; queue('upsert', t); }
+  state.pomodoro = null; state.active = null; const modal = document.querySelector('.pomodoro-backdrop'); if (modal) modal.remove(); render();
+}
+function enhancePomodoro() {
+  document.querySelectorAll('[data-play]').forEach(button => {
+    button.onclick = () => { const t = state.tasks.find(item => item.id === button.dataset.play); if (t) openPomodoro(t); };
+  });
+  document.querySelectorAll('[data-toggle]').forEach(button => button.addEventListener('click', () => {
+    const t = state.tasks.find(item => item.id === button.dataset.toggle);
+    if (t && state.pomodoro && state.pomodoro.taskId === t.id) endPomodoro(true);
+  }));
+  const modal = document.querySelector('.pomodoro-backdrop');
+  if (!modal || !state.pomodoro) return;
+  if (state.pomodoro.phase === 'short' && !modal.querySelector('[data-next-focus]')) {
+    const actions = modal.querySelector('.pomodoro-actions');
+    const next = document.createElement('div'); next.className = 'next-focus-control'; next.innerHTML = '<label>Next focus</label><input data-next-focus type="number" min="1" max="180" value="' + (state.pomodoro.focusMinutes || 30) + '"><span>minutes</span>';
+    if (actions) actions.parentNode.insertBefore(next, actions);
+  }
+  const nextButton = modal.querySelector('[data-pomo-focus]');
+  const input = modal.querySelector('[data-next-focus]');
+  if (nextButton && input) nextButton.onclick = () => startPomodoroPhase('focus', Number(input.value));
+  if (overallActualMinutes() >= 90 && state.pomodoro.phase === 'focus' && !modal.querySelector('[data-global-break]')) {
+    const actions = modal.querySelector('.pomodoro-actions');
+    if (actions) { const button = document.createElement('button'); button.className = 'pomodoro-soft'; button.dataset.globalBreak = '1'; button.textContent = 'Take 15m overall break'; button.onclick = startOverallBreak; actions.appendChild(button); }
+  }
+}
+setInterval(() => { const modal = document.querySelector('.pomodoro-backdrop'); if (modal && state.pomodoro) enhancePomodoro(); }, 500);
+
 // Tracking semantics: actual time is exact focused time, while Pomodoro count
 // is derived from actualMinutes / the task's planned block length.
 function overallActualMinutes() {
@@ -196,7 +259,6 @@ function enhancePomodoro() {
     }
   }
 }
-
 
 
 
