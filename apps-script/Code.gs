@@ -10,10 +10,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'bootstrap') {
     return jsonOutput_(bootstrap());
   }
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Focus Flow 2')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return jsonOutput_({ ok: true, service: 'Focus Flow Sheets proxy', hint: 'Use ?action=bootstrap for data.' });
 }
 
 function doPost(e) {
