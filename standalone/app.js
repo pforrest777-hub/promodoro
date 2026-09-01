@@ -4,14 +4,38 @@ const $=s=>document.querySelector(s); const esc=x=>String(x??'').replace(/[&<>"'
 function localDate(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)} function mins(x){const s=String(x||'30m').toLowerCase();const h=s.match(/([\d.]+)\s*h/),m=s.match(/([\d.]+)\s*m/);return h?Math.round(+h[1]*60):m?Math.round(+m[1]):(+s||30)}
 function save(){localStorage.setItem(KEY,JSON.stringify(state.tasks))} function toast(t){const n=document.createElement('div');n.className='toast';n.textContent=t;document.body.append(n);setTimeout(()=>n.remove(),2200)}
 function queue(type,task){state.pending.push({type,id:task.id,task}); save(); sync()} function newTask(category,title,duration,note=''){const t={id:'local-'+crypto.randomUUID(),date:state.date,category,title:title||'Untitled task',duration:duration||'30m',completed:false,note,actualMinutes:0,pomodoros:0};state.tasks.unshift(t);queue('upsert',t);render()}
-async function sync(){if(!state.pending.length||typeof google==='undefined'||!google.script)return;const changes=state.pending.splice(0); status('SYNCING');google.script.run.withSuccessHandler(r=>{state.tasks=r.tasks||state.tasks;save();status('SYNCED');render()}).withFailureHandler(()=>{state.pending.unshift(...changes);status('OFFLINE')}).sync({changes})}
+async function sync(){
+  if(!state.pending.length)return;
+  const changes=state.pending.splice(0); status('SYNCING');
+  try{
+    const response=await fetch('/api/sheets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes})});
+    if(!response.ok) throw new Error(await response.text());
+    const result=await response.json();
+    state.tasks=result.tasks||state.tasks; save(); status('SYNCED'); render();
+  }catch(error){
+    state.pending.unshift(...changes); status('OFFLINE');
+    console.error('Sheet sync failed',error);
+  }
+}
 function status(x){$('.status').innerHTML='<i class="dot"></i>'+x}
 function render(){const app=$('#app');const visible=state.tasks.filter(t=>t.date===state.date);app.innerHTML=`<div class="shell"><header class="top"><div class="brand"><div class="logo">✦</div><div><h1>Focus Flow</h1><p>Daily operational radar</p></div></div><div class="status"><i class="dot"></i>LOCAL</div></header><div class="toolbar"><div class="tabs"><button class="${state.view==='today'?'active':''}" data-view="today">Today</button><button class="${state.view==='insights'?'active':''}" data-view="insights">Insights</button></div><div class="date"><button id="prev">‹</button><strong>${state.date}</strong><button id="next">›</button></div></div><div class="quick"><input id="title" class="input" placeholder="Add a task and press Enter…"><select id="category" class="select">${CATEGORIES.map(c=>`<option value="${c[0]}">${c[1]}</option>`).join('')}</select><input id="duration" class="input" value="30m"><button id="add">Add task</button></div><main class="${state.view==='insights'?'hidden':''}"><div class="board">${CATEGORIES.map(c=>column(c,visible.filter(t=>t.category===c[0]))).join('')}</div></main><main class="${state.view==='today'?'hidden':''}">${insights()}</main></div>`;bind();}
 function column(c,list){const done=list.filter(t=>t.completed).length,p=list.length?Math.round(done/list.length*100):0;return `<section class="column"><div class="column-head"><div class="column-title">${c[2]} ${c[1]}</div><span class="badge">${done}/${list.length}</span></div><div class="progress"><i style="width:${p}%"></i></div>${list.length?list.map(task).join(''):'<div class="empty">No tasks for this day</div>'}<button class="add" data-cat="${c[0]}">＋ Add objective</button></section>`}
 function task(t){return `<article class="task"><button class="check ${t.completed?'done':''}" data-toggle="${t.id}"></button><div><h3 class="${t.completed?'done':''}">${esc(t.title)}</h3><div class="meta"><span>◷ ${esc(t.duration)}</span>${t.pomodoros?`<span>🍅 ${t.pomodoros}</span>`:''}</div>${t.note?`<div class="meta">${esc(t.note)}</div>`:''}</div><div class="actions"><button class="icon" data-edit="${t.id}">✎</button><button class="icon" data-delete="${t.id}">×</button></div></article>`}
 function insights(){const ts=state.tasks.filter(t=>t.date===state.date),done=ts.filter(t=>t.completed).length,total=ts.reduce((a,t)=>a+mins(t.duration),0),pom=ts.reduce((a,t)=>a+(t.pomodoros||0),0);return `<div class="insights"><div class="metric"><span>Completion</span><strong>${ts.length?Math.round(done/ts.length*100):0}%</strong></div><div class="metric"><span>Planned time</span><strong>${Math.round(total/60*10)/10}h</strong></div><div class="metric"><span>Closed loops</span><strong>${done}</strong></div><div class="metric"><span>Pomodoros</span><strong>${pom}</strong></div></div>`}
 function bind(){$('#prev').onclick=()=>{const d=new Date(state.date);d.setDate(d.getDate()-1);state.date=localDate(d);render()};$('#next').onclick=()=>{const d=new Date(state.date);d.setDate(d.getDate()+1);state.date=localDate(d);render()};document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});$('#add').onclick=()=>{newTask($('#category').value,$('#title').value,$('#duration').value);};$('#title').onkeydown=e=>{if(e.key==='Enter')$('#add').click()};document.querySelectorAll('.add').forEach(b=>b.onclick=()=>newTask(b.dataset.cat,'Untitled task','30m'));document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.toggle);t.completed=!t.completed;queue('upsert',t);render()});document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.delete);state.tasks=state.tasks.filter(x=>x.id!==t.id);queue('delete',t);render()});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const t=state.tasks.find(x=>x.id===b.dataset.edit),v=prompt('Task title',t.title);if(v!==null){t.title=v.trim()||t.title;queue('upsert',t);render()}})}
-function boot(){try{state.tasks=JSON.parse(localStorage.getItem(KEY)||'[]')}catch{};render();if(typeof google!=='undefined'&&google.script){status('SYNCING');google.script.run.withSuccessHandler(r=>{state.tasks=r.tasks||[];save();status('SYNCED');render()}).withFailureHandler(()=>status('OFFLINE')).bootstrap()}else status('LOCAL DEMO')}
+async function boot(){
+  try{state.tasks=JSON.parse(localStorage.getItem(KEY)||'[]')}catch{}
+  render(); status('SYNCING');
+  try{
+    const response=await fetch('/api/sheets?action=bootstrap',{cache:'no-store'});
+    if(!response.ok) throw new Error(await response.text());
+    const result=await response.json();
+    state.tasks=result.tasks||[]; save(); status('SYNCED'); render();
+  }catch(error){
+    status('OFFLINE');
+    console.error('Sheet bootstrap failed',error);
+  }
+}
 document.addEventListener('DOMContentLoaded',boot);
 
 // Pomodoro layer: live focus timer and actual time tracking.
@@ -205,11 +229,11 @@ function overallActualMinutes() {
   return state.tasks.filter(x => x.date === state.date).reduce((sum, x) => sum + (x.actualMinutes || 0), 0) +
     (state.pomodoro && state.pomodoro.phase === 'focus' ? Math.round(pomoElapsed() / 60) : 0);
 }
-function commitPomoWork(t, seconds) {
+function commitPomoWork(t, seconds, completedBlock) {
   const minutes = Math.max(0, Math.round(seconds / 60));
   if (!minutes) return;
   t.actualMinutes = (t.actualMinutes || 0) + minutes;
-  t.pomodoros = Math.floor(t.actualMinutes / Math.max(1, mins(t.duration)));
+  if (completedBlock) t.pomodoros = (t.pomodoros || 0) + 1;
   queue('upsert', t);
 }
 function pomoLabel() {
@@ -219,8 +243,7 @@ function pomoLabel() {
 function pomoTotal() {
   if (state.pomodoro.phase === 'global') return 15 * 60;
   if (state.pomodoro.phase === 'focus') {
-    const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
-    return Math.max(1, mins(t.duration)) * 60;
+    return Math.max(1, state.pomodoro.focusMinutes || 30) * 60;
   }
   return 5 * 60;
 }
@@ -228,7 +251,7 @@ function advancePomodoro(skipped) {
   if (!state.pomodoro) return;
   if (state.pomodoro.phase === 'global' || state.pomodoro.phase === 'short') { startPomodoroPhase('focus'); return; }
   const t = state.tasks.find(x => x.id === state.pomodoro.taskId);
-  commitPomoWork(t, pomoElapsed());
+  commitPomoWork(t, pomoElapsed(), !skipped);
   state.pomodoro.phase = 'short'; state.pomodoro.pausedSeconds = 0; state.pomodoro.startedAt = Date.now(); state.pomodoro.running = true; pomodoroModal();
 }
 function endPomodoro(markDone) {
@@ -258,9 +281,17 @@ function enhancePomodoro() {
       const button = document.createElement('button'); button.className = 'pomodoro-soft'; button.dataset.globalBreak = '1'; button.textContent = 'Take 15m overall break'; button.onclick = startOverallBreak; actions.appendChild(button);
     }
   }
+  if (modal && state.pomodoro.phase === 'short' && !modal.querySelector('[data-next-focus]')) {
+    const actions = modal.querySelector('.pomodoro-actions');
+    const next = document.createElement('div');
+    next.className = 'next-focus-control';
+    next.innerHTML = '<label>Next focus</label><input data-next-focus type="number" min="1" max="180" value="' + (state.pomodoro.focusMinutes || 30) + '"><span>minutes</span>';
+    if (actions) actions.parentNode.insertBefore(next, actions);
+  }
+  const nextButton = modal && modal.querySelector('[data-pomo-focus]');
+  const input = modal && modal.querySelector('[data-next-focus]');
+  if (nextButton && input) nextButton.onclick = () => startPomodoroPhase('focus', Number(input.value));
 }
-
-
 
 
 
