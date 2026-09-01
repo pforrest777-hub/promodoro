@@ -1,18 +1,82 @@
-# Focus Flow 2
+# Focus Flow · Task Tracker + Pomodoro
 
-Bản dựng mới cho app tracking công việc, dùng Google Sheet làm data store nhưng xử lý theo hướng local-first để thao tác không bị chờ Apps Script.
+Web app tracking công việc với Pomodoro. Google Sheet chỉ làm nơi lưu dữ liệu; giao diện chạy độc lập trên web/Vercel để thao tác nhanh hơn Apps Script.
 
-## Cách dùng
+## Trạng thái hiện tại
 
-1. Trong Google Sheet, mở **Extensions → Apps Script**.
-2. Tạo file `Code.gs`, copy `apps-script/Code.gs` vào đó.
-3. Tạo 3 file HTML tên `Index`, `Styles`, `App`, rồi copy nội dung từ `apps-script/Index.html`, `apps-script/Styles.html`, `apps-script/App.html` tương ứng.
-4. Deploy → New deployment → Web app → Execute as Me → quyền truy cập theo nhu cầu.
+- Frontend standalone: `standalone/index.html`, `standalone/app.js`, `standalone/styles.css`.
+- API serverless đọc/ghi Google Sheet: `api/sheets.js`.
+- Vercel dùng `index.html` ở thư mục gốc làm entrypoint.
+- Apps Script cũ vẫn được giữ trong `apps-script/` để tham khảo/backup, không phải frontend chính.
+- Sheet chính: tab `Tasks`.
 
-App đọc toàn bộ task một lần khi mở, cập nhật giao diện trước, rồi gom thay đổi vào một lần `sync`. Các cột `actualMinutes`, `pomodoros`, `lastPomodoroAt` đã được chuẩn bị cho Pomodoro.
+## Tính năng đã làm
 
-## Chẩn đoán dữ liệu hiện tại
+- Tạo, sửa, hoàn thành và xóa task.
+- Phân nhóm Life, Company, Empire.
+- Theo dõi thời gian thực tế và số Pomodoro theo task.
+- Bấm Play mở giao diện Pomodoro đầy đủ: Pause, Skip, End session.
+- Focus đầu tiên chạy theo thời lượng task.
+- Hết focus tự ghi nhận actual time và Pomodoro, sau đó chuyển sang nghỉ ngắn 5 phút.
+- Sau nghỉ ngắn có ô `Next focus` để nhập thời lượng riêng cho vòng tiếp theo; không còn cố định theo thời lượng setup ban đầu.
+- Khi tổng thời gian làm việc trong ngày của tất cả task đạt từ 90 phút, hiện nút `Take 15m overall break`.
+- End session ghi nhận phần thời gian focus đã chạy và đóng task theo luồng hiện tại.
+- Màn Insights so sánh Planned, Actual, Variance và Overrun rate.
+- Local-first UI: giao diện cập nhật ngay, sau đó đồng bộ về Sheet qua API.
 
-- `Daily` là dữ liệu cũ dạng 5 cột; `Tasks` là dữ liệu app hiện tại dạng 9 cột và có 209 dòng.
-- Có nhiều ID tạm `temp-*`, task mặc định `New Objective`, và category viết không đồng nhất.
-- Không nên tiếp tục duy trì hai nguồn dữ liệu. Bản mới dùng `Tasks` làm nguồn chính; `Daily` chỉ nên giữ làm archive/import.
+## Cấu trúc dữ liệu Google Sheet
+
+Tab `Tasks` dùng các cột:
+
+```text
+id, date, category, title, duration, completed, createdAt, updatedAt,
+note, actualMinutes, pomodoros, lastPomodoroAt
+```
+
+Không commit file service-account JSON hoặc API key vào Git. Các file nhạy cảm đã nằm trong `.gitignore`.
+
+## Chạy local
+
+Có thể mở bản demo tĩnh tại `standalone/index.html`. Để test API đầy đủ, chạy một static/server development server tại thư mục project rồi mở trang web qua `http://localhost/...`; không mở bằng `file://`.
+
+Frontend gọi:
+
+```text
+GET  /api/sheets?action=bootstrap
+POST /api/sheets
+```
+
+## Cấu hình Vercel
+
+Trong đúng project Vercel của repo `promodoro`, thêm các Environment Variables cho Production, Preview và Development:
+
+```text
+GOOGLE_SHEET_ID=15sTt-jyrlzkmv0EKwD3mZNUk-zDY8N5lH0iPnlOIOy8
+GOOGLE_SERVICE_ACCOUNT_JSON=<nội dung JSON service account>
+```
+
+Service account phải được chia sẻ quyền **Editor** trên Google Sheet. Sau khi đổi biến môi trường, cần Redeploy.
+
+## Cách kiểm tra kết nối
+
+1. Mở web và kiểm tra trạng thái trên header là `SYNCED`.
+2. Tạo một task mới trên web.
+3. Mở tab `Tasks` trong Google Sheet và kiểm tra task mới.
+4. Chạy một focus ngắn, bấm `End session`.
+5. Kiểm tra `actualMinutes`, `pomodoros` và `completed` được cập nhật.
+
+Nếu app hiện `OFFLINE`, mở endpoint `/api/sheets?action=bootstrap` trên domain Vercel. JSON `500` thường là lỗi Environment Variables hoặc quyền chia sẻ Sheet; `404` nghĩa là deployment chưa chứa thư mục `api/`.
+
+## Git / deploy
+
+Branch deploy hiện tại là `master`. Vercel được kết nối với GitHub repo:
+
+```text
+https://github.com/pforrest777-hub/promodoro
+```
+
+Push lên `master` sẽ tạo deployment mới trên Vercel.
+
+## Lưu ý phát triển
+
+Pomodoro dùng `focusMinutes` cho từng vòng. Không đổi logic này về `mins(task.duration)` trong các hàm cuối file, vì JavaScript sẽ dùng định nghĩa hàm xuất hiện sau cùng và có thể vô tình ghi đè logic tùy chỉnh của vòng tiếp theo.
