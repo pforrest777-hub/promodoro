@@ -4,10 +4,13 @@ const HEADERS = ['id','date','category','title','duration','completed','createdA
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
 function credentials() {
+  const clientEmail = String(process.env.GOOGLE_CLIENT_EMAIL || '').trim();
+  const privateKey = String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
+  if (clientEmail && privateKey) return { client_email: clientEmail, private_key: privateKey };
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   return {
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
+    client_email: '',
+    private_key: ''
   };
 }
 

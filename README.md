@@ -52,10 +52,11 @@ Trong đúng project Vercel của repo `promodoro`, thêm các Environment Varia
 
 ```text
 GOOGLE_SHEET_ID=15sTt-jyrlzkmv0EKwD3mZNUk-zDY8N5lH0iPnlOIOy8
-GOOGLE_SERVICE_ACCOUNT_JSON=<nội dung JSON service account>
+GOOGLE_CLIENT_EMAIL=google-sheet-api@flash-spot-478110-u3.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY=<giá trị private_key trong JSON service account>
 ```
 
-Service account phải được chia sẻ quyền **Editor** trên Google Sheet. Sau khi đổi biến môi trường, cần Redeploy.
+`GOOGLE_CLIENT_EMAIL` dùng Config; `GOOGLE_PRIVATE_KEY` dùng Secret. Đây là cách khuyến nghị để tránh lỗi dán cả JSON vào một biến. Service account phải được chia sẻ quyền **Editor** trên Google Sheet. Sau khi đổi biến môi trường, cần Redeploy.
 
 ## Cách kiểm tra kết nối
 
